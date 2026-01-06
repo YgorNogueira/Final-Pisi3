@@ -2,3 +2,18 @@
 Repositório destinado para a avaliação final da disciplina de Projeto Inderdisciplinar Para Sistemas de Informação III na UFRPE.
 
 O crescimento mundial da diabetes impõe desafios cada vez maiores aos sistemas de saúde, exigindo medidas preventivas mais eficazes. Essa condição, caracterizada por alterações no metabolismo da glicose e elevada associação a complicações cardiovasculares, renais e oculares, demanda estratégias que permitam agir antes do agravamento do quadro. Porém, ainda há dificuldade em compreender, de forma integrada, o papel de hábitos alimentares, níveis de atividade física e fatores socioeconômicos na elevação do risco, especialmente porque análises tradicionais tendem a simplificar relações complexas entre esses elementos. Diante disso, este trabalho propõe aplicar técnicas de aprendizado de máquina para ampliar a análise de variáveis associadas ao risco, explorando relações pouco evidentes e oferecendo suporte a abordagens preventivas mais precisas. Espera-se que tal abordagem contribua para estratégias preventivas direcionadas e para o fortalecimento de políticas públicas voltadas à redução da incidência e do impacto da doença.
+
+## Como Executar a Aplicação
+Clonar o repositório
+```
+git clone https://github.com/seu-usuario/seu-repositorio.git
+cd seu-repositorio
+```
+Instalar as dependências
+```
+pip install dash plotly pandas numpy scipy scikit-learn
+```
+Executar a aplicação
+```
+python EDA.py
+```
