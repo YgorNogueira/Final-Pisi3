@@ -83,6 +83,8 @@ app.layout = html.Div(style={"padding": "20px"}, children=[
 
     html.H1("EDA – Diabetes Health Indicators Dataset"),
 
+    html.H2("Link para o dataset: https://www.kaggle.com/datasets/alexteboul/diabetes-health-indicators-dataset"),
+
     html.H2("Shape do Dataset"),
     html.P(shape_text),
 
