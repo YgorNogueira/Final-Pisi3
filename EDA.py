@@ -30,7 +30,7 @@ def fig_to_base64():
     return f"data:image/png;base64,{encoded}"
 
 def generate_boxplot_overall(df):
-    """Boxplots gerais (como você já tinha) - bom para outliers."""
+    """Boxplots gerais"""
     plt.figure(figsize=(15, 15))
     cols = ['BMI', 'GenHlth', 'MentHlth', 'PhysHlth', 'Age','Education', 'Income']
     for i, col in enumerate(cols):
@@ -133,6 +133,22 @@ def build_group_stats_table(df, target="Diabetes_binary", cols=None):
     out = pd.concat([mean_df, median_df], ignore_index=True)
     return out
 
+def generate_boxplot(df):
+    plt.figure(figsize=(15, 15))
+    for i, col in enumerate(['BMI', 'GenHlth', 'MentHlth', 'PhysHlth', 'Age','Education', 'Income']):
+        plt.subplot(4, 2, i + 1)
+        sns.boxplot(x=col, data=df)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    plt.close()
+    buf.seek(0)
+
+    encoded = base64.b64encode(buf.read()).decode("utf-8")
+    
+    return f"data:image/png;base64,{encoded}"
+
 
 # ===== Pré-processamento =====
 db = df.copy()
@@ -161,6 +177,8 @@ nulls_df.columns = ["Coluna", "Valores nulos"]
 unique_values = {col: db[col].nunique() for col in db.columns}
 unique_df = pd.DataFrame.from_dict(unique_values, orient="index", columns=["Unique value count"]) \
     .reset_index().rename(columns={"index": "Coluna"})
+
+boxplot_img_outliers = generate_boxplot(db)
 
 target = "Diabetes_binary"
 
@@ -240,6 +258,9 @@ app.layout = html.Div(style={"padding": "20px"}, children=[
 
     html.H3("Duplicatas"),
     html.P(f"Antes: {duplicates_before} | Depois: {duplicates_after}"),
+
+    html.H2("Análise de Outliers"),
+    html.Img(src=boxplot_img_outliers, style={"width": "100%"}),
 
     html.H2("3) Distribuição do alvo (balanceamento)"),
     html.Img(src=target_dist_img, style={"width": "60%"}),
