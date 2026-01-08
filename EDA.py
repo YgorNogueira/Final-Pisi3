@@ -71,6 +71,28 @@ def generateHeatMap(df, method="spearman", show_annot=False):
     encoded = base64.b64encode(buf.read()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
+def generateTargetCorrelationPlot(df, target="Diabetes_binary", method="spearman"):
+    if target not in df.columns:
+        raise ValueError(f"Target column '{target}' not found in DataFrame.")
+    
+    correlationSeries = df.corr(method=method)[target].drop(target)
+
+    plt.figure(figsize=(10, max(6, len(correlationSeries ) * 0.35)))
+    sns.barplot(x=correlationSeries.values, y=correlationSeries.index, palette="viridis")
+    plt.title(f"Correlação de variáveis com o {target} ({method.title()})", pad=12)
+    plt.xlabel("Coeficiente de Correlação")
+    plt.ylabel("Variáveis")
+    plt.tight_layout()
+
+    buf=io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format="png", dpi=200)
+    plt.close()
+    buf.seek(0)
+
+    encoded = base64.b64encode(buf.read()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
 db = df.copy()
 
 # transformando tudo em int
@@ -106,6 +128,7 @@ unique_df = pd.DataFrame.from_dict(
 
 boxplot_img = generate_boxplot(db)
 heatmap_img = generateHeatMap(db, method="spearman", show_annot=False)
+target_corr_img = generateTargetCorrelationPlot(db, target="Diabetes_binary", method="spearman")
 
 app = dash.Dash(__name__)
 server = app.server
@@ -160,8 +183,11 @@ app.layout = html.Div(style={"padding": "20px"}, children=[
     html.Img(src=boxplot_img, style={"width": "100%"}),
     
     html.H2("Mapa de Correlação"),
-    html.Img(src=heatmap_img, style={"width": "100%"})
+    html.Img(src=heatmap_img, style={"width": "100%"}),
 
+    html.H2("Correlação das variáveis com a variável alvo (Diabetes_binary)"),
+    html.Img(src=target_corr_img, style={"width": "100%"}), 
+    
 ])
 
 if __name__ == '__main__':
