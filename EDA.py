@@ -29,16 +29,6 @@ def fig_to_base64():
     encoded = base64.b64encode(buf.read()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-def generate_boxplot_overall(df):
-    """Boxplots gerais"""
-    plt.figure(figsize=(15, 15))
-    cols = ['BMI', 'GenHlth', 'MentHlth', 'PhysHlth', 'Age','Education', 'Income']
-    for i, col in enumerate(cols):
-        plt.subplot(4, 2, i + 1)
-        sns.boxplot(x=col, data=df)
-        plt.title(f"Boxplot - {col}")
-    return fig_to_base64()
-
 def generate_target_distribution(df, target="Diabetes_binary"):
     """Distribuição do target (balanceamento)."""
     counts = df[target].value_counts().sort_index()
@@ -146,7 +136,7 @@ def generate_boxplot(df):
     buf.seek(0)
 
     encoded = base64.b64encode(buf.read()).decode("utf-8")
-    
+
     return f"data:image/png;base64,{encoded}"
 
 
@@ -184,7 +174,6 @@ target = "Diabetes_binary"
 
 target_dist_img = generate_target_distribution(db, target=target)
 
-boxplot_img = generate_boxplot_overall(db)
 
 heatmap_img = generateHeatMap(db, method="spearman", show_annot=False)
 target_corr_img = generateTargetCorrelationPlot(db, target=target, method="spearman")
@@ -295,9 +284,6 @@ app.layout = html.Div(style={"padding": "20px"}, children=[
     html.Img(src=box_physhlth_target_img, style={"width": "100%"}),
     html.H4("MentHlth por Diabetes"),
     html.Img(src=box_menthlth_target_img, style={"width": "100%"}),
-
-    html.H2("5) Outliers (visão geral)"),
-    html.Img(src=boxplot_img, style={"width": "100%"}),
 
     html.H2("6) Associação de variáveis binárias com diabetes (taxas)"),
     html.H4("HighBP → taxa média de diabetes"),
