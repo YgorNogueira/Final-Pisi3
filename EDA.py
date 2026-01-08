@@ -8,6 +8,7 @@ from dash import html, dash_table
 import matplotlib.pyplot as plt
 import seaborn as sns
 import base64
+import numpy as np
 
 
 df = pd.read_csv('diabetes_binary_health_indicators_BRFSS2015.csv')
@@ -34,6 +35,36 @@ def generate_boxplot(df):
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png")
+    plt.close()
+    buf.seek(0)
+
+    encoded = base64.b64encode(buf.read()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
+def generateHeatMap(df, method="spearman", show_annot=False):
+    corr = df.corr(method=method)
+
+    mask = np.triu(np.ones_like(corr, dtype=bool))
+
+    plt.figure(figsize=(18, 12))
+    sns.heatmap(
+        corr,
+        mask=mask,
+        cmap="RdBu_r",
+        center=0,
+        vmin=-1, vmax=1,
+        square=True,
+        linewidths=0.4,
+        cbar_kws={"shrink": 0.8},
+        annot=show_annot,          
+        fmt=".2f"                 
+    )
+
+    plt.title(f"Correlation Heatmap ({method.title()})", pad=12)
+
+    buf=io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format="png", dpi=200)
     plt.close()
     buf.seek(0)
 
@@ -74,7 +105,7 @@ unique_df = pd.DataFrame.from_dict(
 ).reset_index().rename(columns={"index": "Coluna"})
 
 boxplot_img = generate_boxplot(db)
-
+heatmap_img = generateHeatMap(db, method="spearman", show_annot=False)
 
 app = dash.Dash(__name__)
 server = app.server
@@ -126,7 +157,10 @@ app.layout = html.Div(style={"padding": "20px"}, children=[
     html.P(f"Antes: {duplicates_before} | Depois: {duplicates_after}"),
 
     html.H2("Análise de Outliers"),
-    html.Img(src=boxplot_img, style={"width": "100%"})
+    html.Img(src=boxplot_img, style={"width": "100%"}),
+    
+    html.H2("Mapa de Correlação"),
+    html.Img(src=heatmap_img, style={"width": "100%"})
 
 ])
 
