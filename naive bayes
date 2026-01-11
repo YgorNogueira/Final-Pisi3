@@ -1,0 +1,341 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import warnings
+import joblib
+import json
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, confusion_matrix, roc_curve
+)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.naive_bayes import GaussianNB
+
+warnings.filterwarnings("ignore")
+
+print("="*60)
+print("NAIVE BAYES - FINAL")
+print("="*60)
+
+
+print("\n" + "="*60)
+print("1. CARREGAMENTO DOS DADOS")
+print("="*60)
+
+try:
+    df = pd.read_csv("diabetes_processed.csv")
+    print(f"✓ Dados carregados: {df.shape[0]} observações, {df.shape[1]} variáveis")
+except FileNotFoundError:
+    print("✗ Arquivo 'diabetes_processed.csv' não encontrado")
+    print("✗ Execute primeiro o script metodologia.py (ou seu pipeline de preparo)")
+    raise SystemExit(1)
+
+if "Diabetes_binary" not in df.columns:
+    print("✗ Variável alvo 'Diabetes_binary' não encontrada no dataset")
+    raise SystemExit(1)
+
+print("\n" + "="*60)
+print("2. PREPARAÇÃO DOS DADOS")
+print("="*60)
+
+classification_features = [
+    "HighBP", "HighChol", "BMI", "Smoker", "Stroke",
+    "PhysActivity", "HvyAlcoholConsump", "GenHlth",
+    "MentHlth", "PhysHlth", "DiffWalk", "HeartDiseaseorAttack",
+    "Age", "Education", "Income"
+]
+
+available_features = [f for f in classification_features if f in df.columns]
+missing_features = [f for f in classification_features if f not in df.columns]
+
+if missing_features:
+    print(f"⚠ Features faltando: {missing_features}")
+    print(f"✓ Usando {len(available_features)} features disponíveis")
+
+if len(available_features) < 5:
+    print("✗ Número insuficiente de features disponíveis")
+    raise SystemExit(1)
+
+X = df[available_features].copy()
+y = df["Diabetes_binary"].copy()
+
+print("\nEstatísticas do dataset:")
+print(f"  Total de observações: {len(df):,}")
+print(f"  Features utilizadas: {len(available_features)}")
+print(f"  Casos de diabetes: {y.sum():,} ({y.mean():.2%})")
+
+
+print("\n" + "="*60)
+print("3. DIVISÃO DOS DADOS")
+print("="*60)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
+)
+
+print("Divisão treino-teste (80/20):")
+print(f"  Treino: {X_train.shape[0]:,} observações")
+print(f"  Teste:  {X_test.shape[0]:,} observações")
+print(f"  Proporção diabetes (treino): {y_train.mean():.3f} ({y_train.sum():,} casos)")
+print(f"  Proporção diabetes (teste):  {y_test.mean():.3f} ({y_test.sum():,} casos)")
+
+
+
+print("\n" + "="*60)
+print("4. TREINAMENTO DO NAIVE BAYES")
+print("="*60)
+
+pipeline_nb = Pipeline(steps=[
+    ("scaler", StandardScaler()),
+    ("model", GaussianNB())
+])
+
+print("Treinando modelo GaussianNB...")
+pipeline_nb.fit(X_train, y_train)
+print("✓ Modelo treinado com sucesso")
+
+print("\n" + "="*60)
+print("5. CALIBRAÇÃO DO THRESHOLD")
+print("="*60)
+
+y_proba = pipeline_nb.predict_proba(X_test)[:, 1]
+
+
+min_precision = 0.30
+thresholds = np.linspace(0.05, 0.95, 181)
+
+best = {
+    "threshold": 0.5,
+    "recall": 0.0,
+    "precision": 0.0,
+    "f1": 0.0
+}
+
+for t in thresholds:
+    y_pred_t = (y_proba >= t).astype(int)
+    prec_t = precision_score(y_test, y_pred_t, zero_division=0)
+    rec_t = recall_score(y_test, y_pred_t, zero_division=0)
+    f1_t = f1_score(y_test, y_pred_t, zero_division=0)
+
+    if prec_t >= min_precision and rec_t > best["recall"]:
+        best.update({"threshold": float(t), "recall": float(rec_t), "precision": float(prec_t), "f1": float(f1_t)})
+
+print("Melhor threshold encontrado (regra: maior recall com precisão mínima):")
+print(f"  min_precision = {min_precision:.2f}")
+print(f"  threshold = {best['threshold']:.2f} | precision = {best['precision']:.3f} | recall = {best['recall']:.3f} | f1 = {best['f1']:.3f}")
+
+threshold_final = best["threshold"]
+y_pred = (y_proba >= threshold_final).astype(int)
+
+
+
+print("\n" + "="*60)
+print("6. AVALIAÇÃO DO MODELO")
+print("="*60)
+
+acc = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred, zero_division=0)
+rec = recall_score(y_test, y_pred, zero_division=0)
+f1 = f1_score(y_test, y_pred, zero_division=0)
+auc = roc_auc_score(y_test, y_proba)
+
+cm = confusion_matrix(y_test, y_pred)
+tn, fp, fn, tp = cm.ravel()
+
+print("Métricas de desempenho (teste):")
+print("="*40)
+print(f"{'Acurácia:':<15} {acc:.4f}")
+print(f"{'Precisão:':<15} {prec:.4f}")
+print(f"{'Recall:':<15} {rec:.4f}")
+print(f"{'F1-Score:':<15} {f1:.4f}")
+print(f"{'AUC-ROC:':<15} {auc:.4f}")
+print(f"{'Threshold:':<15} {threshold_final:.2f}")
+print("="*40)
+
+print("\nMatriz de Confusão:")
+print("="*40)
+print(f"                Predito")
+print(f"              Negativo Positivo")
+print(f"Real Negativo {tn:>8} {fp:>8}")
+print(f"     Positivo {fn:>8} {tp:>8}")
+print("="*40)
+
+print("\nTaxas importantes:")
+print(f"  Sensibilidade (TPR/Recall): {tp/(tp+fn):.4f}")
+print(f"  Especificidade (TNR):       {tn/(tn+fp):.4f}")
+print(f"  FPR:                        {fp/(fp+tn):.4f}")
+print(f"  FNR:                        {fn/(fn+tp):.4f}")
+
+
+
+print("\n" + "="*60)
+print("7. ANÁLISE DA CURVA ROC")
+print("="*60)
+
+fpr, tpr, roc_thresholds = roc_curve(y_test, y_proba)
+
+plt.figure(figsize=(10, 8))
+plt.plot(fpr, tpr, lw=2, label=f'Naive Bayes (AUC = {auc:.3f})')
+plt.plot([0, 1], [0, 1], lw=2, linestyle="--", label="Aleatório (AUC = 0.5)")
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel("Taxa de Falsos Positivos")
+plt.ylabel("Taxa de Verdadeiros Positivos")
+plt.title("Curva ROC - Naive Bayes")
+plt.legend(loc="lower right")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig("naive_bayes_curva_roc.png", dpi=300, bbox_inches="tight")
+print("✓ Curva ROC salva como 'naive_bayes_curva_roc.png'")
+plt.show()
+
+
+
+print("\n" + "="*60)
+print("8. OBS: IMPORTÂNCIA DE FEATURES")
+print("="*60)
+print("⚠ Naive Bayes não fornece 'feature_importances_' como modelos baseados em árvores.")
+print("✓ Sugestão (opcional): usar análise de correlação, coeficientes de regressão logística ou SHAP no modelo final baseado em árvores.")
+
+
+
+print("\n" + "="*60)
+print("9. COMPARAÇÃO COM MODELOS EXISTENTES")
+print("="*60)
+
+comparison_rows = []
+
+comparison_rows.append({
+    "Modelo": "Naive Bayes",
+    "Acurácia": acc,
+    "Precisão": prec,
+    "Recall": rec,
+    "F1-Score": f1,
+    "AUC-ROC": auc
+})
+
+try:
+    pipeline_lr = joblib.load("modelo_regressao_logistica_otimizada.pkl")
+    xgb_model = joblib.load("modelo_xgboost_otimizado.pkl")
+
+    y_pred_lr = pipeline_lr.predict(X_test)
+    y_proba_lr = pipeline_lr.predict_proba(X_test)[:, 1]
+    comparison_rows.append({
+        "Modelo": "Regressão Logística",
+        "Acurácia": accuracy_score(y_test, y_pred_lr),
+        "Precisão": precision_score(y_test, y_pred_lr, zero_division=0),
+        "Recall": recall_score(y_test, y_pred_lr, zero_division=0),
+        "F1-Score": f1_score(y_test, y_pred_lr, zero_division=0),
+        "AUC-ROC": roc_auc_score(y_test, y_proba_lr),
+    })
+
+    y_pred_xgb = xgb_model.predict(X_test)
+    y_proba_xgb = xgb_model.predict_proba(X_test)[:, 1] if hasattr(xgb_model, "predict_proba") else None
+    auc_xgb = roc_auc_score(y_test, y_proba_xgb) if y_proba_xgb is not None else np.nan
+    comparison_rows.append({
+        "Modelo": "XGBoost",
+        "Acurácia": accuracy_score(y_test, y_pred_xgb),
+        "Precisão": precision_score(y_test, y_pred_xgb, zero_division=0),
+        "Recall": recall_score(y_test, y_pred_xgb, zero_division=0),
+        "F1-Score": f1_score(y_test, y_pred_xgb, zero_division=0),
+        "AUC-ROC": auc_xgb,
+    })
+
+except Exception as e:
+    print(f"⚠ Não foi possível carregar modelos anteriores: {e}")
+    print("⚠ A tabela comparativa conterá apenas o Naive Bayes.")
+
+df_comparacao = pd.DataFrame(comparison_rows)
+print("\nTabela comparativa (teste):")
+print(df_comparacao.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+df_comparacao.to_csv("comparacao_modelos_naive_bayes.csv", index=False)
+print("✓ Comparação salva como 'comparacao_modelos_naive_bayes.csv'")
+
+
+
+print("\n" + "="*60)
+print("10. SALVANDO RESULTADOS")
+print("="*60)
+
+joblib.dump(pipeline_nb, "modelo_naive_bayes.pkl")
+print("✓ Modelo salvo como 'modelo_naive_bayes.pkl'")
+
+metrics_dict = {
+    "model": "GaussianNB",
+    "threshold_final": float(threshold_final),
+    "min_precision_constraint": float(min_precision),
+    "accuracy": float(acc),
+    "precision": float(prec),
+    "recall": float(rec),
+    "f1_score": float(f1),
+    "auc_roc": float(auc),
+    "confusion_matrix": {
+        "true_negative": int(tn),
+        "false_positive": int(fp),
+        "false_negative": int(fn),
+        "true_positive": int(tp)
+    },
+    "features_used": available_features
+}
+
+with open("naive_bayes_metrics.json", "w", encoding="utf-8") as f:
+    json.dump(metrics_dict, f, indent=4, ensure_ascii=False)
+print("✓ Métricas salvas como 'naive_bayes_metrics.json'")
+
+predictions_df = pd.DataFrame({
+    "actual": y_test.values,
+    "predicted": y_pred,
+    "probability": y_proba
+})
+predictions_df.to_csv("naive_bayes_predictions.csv", index=False)
+print("✓ Previsões salvas como 'naive_bayes_predictions.csv'")
+
+
+
+print("\n" + "="*70)
+print("RELATÓRIO FINAL - NAIVE BAYES")
+print("="*70)
+
+print(f"""
+RESUMO DA IMPLEMENTAÇÃO:
+
+1. DADOS UTILIZADOS:
+   • Total de observações: {len(df):,}
+   • Features utilizadas: {len(available_features)}
+   • Casos de diabetes: {y.sum():,} ({y.mean():.2%})
+
+2. CONFIGURAÇÃO DO MODELO:
+   • Algoritmo: Gaussian Naive Bayes
+   • Padronização: StandardScaler (pipeline)
+   • Estratégia p/ desbalanceamento: ajuste de threshold (sem SMOTE)
+   • Threshold final: {threshold_final:.2f}
+   • Restrição de precisão mínima: {min_precision:.2f}
+
+3. DESEMPENHO NO TESTE:
+   • Acurácia: {acc:.4f}
+   • Precisão: {prec:.4f}
+   • Recall: {rec:.4f}
+   • F1-Score: {f1:.4f}
+   • AUC-ROC: {auc:.4f}
+
+4. MATRIZ DE CONFUSÃO:
+   • TN: {tn:,} | FP: {fp:,} | FN: {fn:,} | TP: {tp:,}
+
+5. ARQUIVOS GERADOS:
+   • modelo_naive_bayes.pkl
+   • naive_bayes_metrics.json
+   • naive_bayes_predictions.csv
+   • naive_bayes_curva_roc.png
+   • comparacao_modelos_naive_bayes.csv
+""")
+
+print("="*70)
+print("IMPLEMENTAÇÃO DO NAIVE BAYES CONCLUÍDA COM SUCESSO!")
+print("="*70)

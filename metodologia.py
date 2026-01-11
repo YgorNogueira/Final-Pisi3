@@ -1,4 +1,4 @@
- # ============================================
+# ============================================
 # 1. IMPORTAÇÕES PARA MODELAGEM
 # ============================================
 
@@ -26,7 +26,6 @@ from xgboost import XGBClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
                            f1_score, roc_auc_score, confusion_matrix, 
                            classification_report, roc_curve)
-from sklearn.pipeline import Pipeline
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 import shap
@@ -234,251 +233,43 @@ print(f"\n4.3. Balanceamento com SMOTE:")
 print(f"  Antes do SMOTE: {X_train.shape[0]:,} observações")
 print(f"  Depois do SMOTE: {X_train_bal.shape[0]:,} observações")
 print(f"  Proporção após SMOTE: {y_train_bal.mean():.3f}")
+
 # ============================================
-# 5. MODELAGEM: REGRESSÃO LOGÍSTICA OTIMIZADA
+# 5. MODELAGEM: REGRESSÃO LOGÍSTICA
 # ============================================
 
 print("\n" + "="*60)
-print("5. REGRESSÃO LOGÍSTICA - OTIMIZAÇÃO")
+print("5. REGRESSÃO LOGÍSTICA")
 print("="*60)
 
-# 5.1. OTIMIZAÇÃO DE HIPERPARÂMETROS PARA REGRESSÃO LOGÍSTICA
-print("\n5.1. Otimizando hiperparâmetros da Regressão Logística...")
+# 5.1. Normalizar features para Regressão Logística
+scaler_lr = StandardScaler()
+X_train_lr = scaler_lr.fit_transform(X_train_bal)
+X_test_lr = scaler_lr.transform(X_test)
 
-# Definir grade de parâmetros para otimização
-param_grid_lr = {
-    'classifier__C': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
-    'classifier__penalty': ['l1', 'l2'],
-    'classifier__solver': ['liblinear', 'saga'],  # Ambos suportam L1 e L2
-    'classifier__class_weight': [None, 'balanced', {0: 1, 1: 2}, {0: 1, 1: 3}],
-    'classifier__max_iter': [1000, 2000]
-}
+# 5.2. Criar e treinar modelo
+lr_model = LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
+lr_model.fit(X_train_lr, y_train_bal)
 
-# Criar pipeline base
-pipeline_lr_base = Pipeline([
-    ('scaler', StandardScaler()),
-    ('classifier', LogisticRegression(random_state=42))
-])
+# 5.3. Fazer previsões
+y_pred_lr = lr_model.predict(X_test_lr)
+y_pred_proba_lr = lr_model.predict_proba(X_test_lr)[:, 1]
 
-# Otimizar com RandomizedSearchCV (mais rápido que GridSearchCV)
-random_search_lr = RandomizedSearchCV(
-    pipeline_lr_base,
-    param_grid_lr,
-    n_iter=50,  # Testar 50 combinações aleatórias
-    cv=3,  # 3-fold cross-validation
-    scoring='f1',  # Otimizar para F1-Score
-    n_jobs=-1,  # Usar todos os núcleos
-    random_state=42,
-    verbose=1
-)
+# 5.4. Avaliar modelo
+print("\n5.1. Métricas da Regressão Logística:")
+print("  Acurácia:", accuracy_score(y_test, y_pred_lr))
+print("  Precisão:", precision_score(y_test, y_pred_lr))
+print("  Recall:", recall_score(y_test, y_pred_lr))
+print("  F1-Score:", f1_score(y_test, y_pred_lr))
+print("  AUC-ROC:", roc_auc_score(y_test, y_pred_proba_lr))
 
-print("Executando RandomizedSearchCV para Regressão Logística...")
-random_search_lr.fit(X_train, y_train)  # Usar dados ORIGINAIS (não balanceados com SMOTE)
+# 5.5. Validação cruzada
+cv_scores_lr = cross_val_score(lr_model, X_train_lr, y_train_bal, 
+                               cv=5, scoring='f1')
+print(f"\n5.2. Validação Cruzada (F1-Score):")
+print(f"  Scores: {cv_scores_lr}")
+print(f"  Média: {cv_scores_lr.mean():.4f} (+/- {cv_scores_lr.std()*2:.4f})")
 
-# 5.2. MELHORES PARÂMETROS ENCONTRADOS
-print(f"\n5.2. Melhores parâmetros encontrados:")
-for param, value in random_search_lr.best_params_.items():
-    print(f"  {param}: {value}")
-
-print(f"  Melhor F1-Score (validação): {random_search_lr.best_score_:.4f}")
-
-# 5.3. TREINAR MODELO FINAL COM MELHORES PARÂMETROS
-pipeline_lr_optimized = random_search_lr.best_estimator_
-
-# Fazer previsões
-y_pred_lr_opt = pipeline_lr_optimized.predict(X_test)
-y_pred_proba_lr_opt = pipeline_lr_optimized.predict_proba(X_test)[:, 1]
-
-# 5.4. AVALIAR MODELO OTIMIZADO
-print("\n5.3. Métricas da Regressão Logística Otimizada:")
-print("  Acurácia:", accuracy_score(y_test, y_pred_lr_opt))
-print("  Precisão:", precision_score(y_test, y_pred_lr_opt))
-print("  Recall:", recall_score(y_test, y_pred_lr_opt))
-print("  F1-Score:", f1_score(y_test, y_pred_lr_opt))
-print("  AUC-ROC:", roc_auc_score(y_test, y_pred_proba_lr_opt))
-
-# 5.5. TESTAR DIFERENTES THRESHOLDS (ponto de corte)
-print("\n5.4. Otimizando threshold (ponto de corte)...")
-
-# Calcular curva ROC para encontrar melhor threshold
-fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba_lr_opt)
-
-# Encontrar threshold que maximiza F1-Score
-best_threshold = 0.5
-best_f1 = 0
-
-for threshold in np.arange(0.1, 0.9, 0.05):
-    y_pred_thresh = (y_pred_proba_lr_opt >= threshold).astype(int)
-    f1 = f1_score(y_test, y_pred_thresh)
-    if f1 > best_f1:
-        best_f1 = f1
-        best_threshold = threshold
-
-print(f"  Melhor threshold encontrado: {best_threshold:.2f}")
-print(f"  F1-Score com threshold {best_threshold:.2f}: {best_f1:.4f}")
-
-# Aplicar melhor threshold
-y_pred_lr_best = (y_pred_proba_lr_opt >= best_threshold).astype(int)
-
-print("\n5.5. Métricas com threshold otimizado:")
-print("  Acurácia:", accuracy_score(y_test, y_pred_lr_best))
-print("  Precisão:", precision_score(y_test, y_pred_lr_best))
-print("  Recall:", recall_score(y_test, y_pred_lr_best))
-print("  F1-Score:", f1_score(y_test, y_pred_lr_best))
-
-# 5.6. VALIDAÇÃO CRUZADA DO MODELO OTIMIZADO
-print(f"\n5.6. Validação Cruzada do modelo otimizado...")
-cv_scores_lr_opt = cross_val_score(
-    pipeline_lr_optimized, 
-    X_train, 
-    y_train, 
-    cv=5, 
-    scoring='f1',
-    n_jobs=-1
-)
-print(f"  Scores F1: {cv_scores_lr_opt}")
-print(f"  Média F1: {cv_scores_lr_opt.mean():.4f} (+/- {cv_scores_lr_opt.std()*2:.4f})")
-
-# 5.7. ANÁLISE DETALHADA DOS RESULTADOS
-print("\n" + "="*60)
-print("ANÁLISE DETALHADA DOS RESULTADOS")
-print("="*60)
-
-# Matriz de confusão
-cm = confusion_matrix(y_test, y_pred_lr_best)
-tn, fp, fn, tp = cm.ravel()
-
-print(f"\nMatriz de Confusão:")
-print(f"  Verdadeiros Negativos (TN): {tn}")
-print(f"  Falsos Positivos (FP): {fp}")
-print(f"  Falsos Negativos (FN): {fn}")
-print(f"  Verdadeiros Positivos (TP): {tp}")
-
-# Métricas calculadas manualmente
-print(f"\nTaxas importantes:")
-print(f"  Taxa de Falsos Positivos (FPR): {fp/(fp+tn):.4f}")
-print(f"  Taxa de Falsos Negativos (FNR): {fn/(fn+tp):.4f}")
-print(f"  Valor Preditivo Positivo (Precisão): {tp/(tp+fp):.4f}")
-print(f"  Valor Preditivo Negativo: {tn/(tn+fn):.4f}")
-
-# 5.8. COMPARAÇÃO COM OUTRAS TÉCNICAS DE BALANCEAMENTO
-print("\n5.7. Testando diferentes técnicas de balanceamento...")
-
-from imblearn.under_sampling import RandomUnderSampler
-from imblearn.combine import SMOTETomek
-
-# Técnica 1: Under-sampling
-rus = RandomUnderSampler(random_state=42)
-X_train_rus, y_train_rus = rus.fit_resample(X_train, y_train)
-
-# Técnica 2: SMOTE + Tomek
-smote_tomek = SMOTETomek(random_state=42)
-X_train_smt, y_train_smt = smote_tomek.fit_resample(X_train, y_train)
-
-# Criar modelos para cada técnica
-balance_methods = {
-    'SMOTE (original)': (X_train_bal, y_train_bal),
-    'Under-sampling': (X_train_rus, y_train_rus),
-    'SMOTE + Tomek': (X_train_smt, y_train_smt),
-    'Sem balanceamento': (X_train, y_train)
-}
-
-results_balance = []
-
-for method_name, (X_train_m, y_train_m) in balance_methods.items():
-    # Treinar modelo simples
-    pipeline_temp = Pipeline([
-        ('scaler', StandardScaler()),
-        ('classifier', LogisticRegression(
-            C=1.0,
-            penalty='l2',
-            solver='lbfgs',
-            max_iter=1000,
-            random_state=42
-        ))
-    ])
-    
-    pipeline_temp.fit(X_train_m, y_train_m)
-    y_pred_temp = pipeline_temp.predict(X_test)
-    
-    results_balance.append({
-        'Método': method_name,
-        'Amostras Treino': len(X_train_m),
-        'Acurácia': accuracy_score(y_test, y_pred_temp),
-        'F1-Score': f1_score(y_test, y_pred_temp),
-        'Recall': recall_score(y_test, y_pred_temp),
-        'Precisão': precision_score(y_test, y_pred_temp)
-    })
-
-# Mostrar resultados
-results_balance_df = pd.DataFrame(results_balance)
-print("\nComparação de técnicas de balanceamento:")
-print(results_balance_df.to_string(index=False))
-
-# 5.9. ESCOLHER MELHOR MODELO PARA REGRESSÃO LOGÍSTICA
-print("\n" + "="*60)
-print("DEFININDO MODELO FINAL DE REGRESSÃO LOGÍSTICA")
-print("="*60)
-
-# Usar o modelo otimizado como final
-pipeline_lr = pipeline_lr_optimized
-y_pred_lr = y_pred_lr_opt  # Ou y_pred_lr_best se quiser usar threshold otimizado
-y_pred_proba_lr = y_pred_proba_lr_opt
-
-print("Modelo final selecionado:")
-print(f"  Tipo: Regressão Logística Otimizada")
-print(f"  Parâmetros: {random_search_lr.best_params_}")
-print(f"  F1-Score no teste: {f1_score(y_test, y_pred_lr):.4f}")
-print(f"  AUC-ROC: {roc_auc_score(y_test, y_pred_proba_lr):.4f}")
-
-# 5.10. ANÁLISE DAS FEATURES IMPORTANTES
-print("\n5.8. Análise das features mais importantes:")
-
-# Extrair coeficientes do modelo
-classifier = pipeline_lr.named_steps['classifier']
-coefficients = classifier.coef_[0]
-feature_names = X_train.columns
-
-# Criar DataFrame com importância das features
-feature_importance_df = pd.DataFrame({
-    'Feature': feature_names,
-    'Coeficiente': coefficients,
-    'Importância Absoluta': np.abs(coefficients)
-}).sort_values('Importância Absoluta', ascending=False)
-
-print("\nTop 10 features mais importantes:")
-print(feature_importance_df.head(10).to_string(index=False))
-
-# Visualizar importância das features
-plt.figure(figsize=(10, 6))
-top_n = min(15, len(feature_importance_df))
-top_features = feature_importance_df.head(top_n)
-
-# Plot horizontal bars
-bars = plt.barh(range(top_n), top_features['Importância Absoluta'][::-1])
-plt.yticks(range(top_n), top_features['Feature'][::-1])
-plt.xlabel('Importância Absoluta (|Coeficiente|)')
-plt.title('Top 15 Features Mais Importantes - Regressão Logística')
-plt.grid(axis='x', alpha=0.3)
-
-# Adicionar valores nas barras
-for i, (bar, coef) in enumerate(zip(bars, top_features['Coeficiente'][::-1])):
-    width = bar.get_width()
-    plt.text(width + 0.001, bar.get_y() + bar.get_height()/2, 
-             f'{coef:.3f}', ha='left', va='center', fontsize=9)
-
-plt.tight_layout()
-plt.savefig('feature_importance_logistic.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-print("\n" + "-"*60)
-print("REGRESSÃO LOGÍSTICA OTIMIZADA - CONCLUÍDA!")
-print("-"*60)
-
-# ============================================
-# CONTINUA COM O RESTO DO CÓDIGO...
-# NOTA: Atualizar as seções seguintes para usar y_pred_lr e y_pred_proba_lr
-# ============================================
 # ============================================
 # 6. MODELAGEM: XGBOOST
 # ============================================
@@ -568,6 +359,7 @@ print(f"\n7.3. Métricas do XGBoost Otimizado:")
 print("  Acurácia:", accuracy_score(y_test, y_pred_opt))
 print("  F1-Score:", f1_score(y_test, y_pred_opt))
 print("  AUC-ROC:", roc_auc_score(y_test, y_pred_proba_opt))
+
 # ============================================
 # 8. ANÁLISE COMPARATIVA DOS MODELOS
 # ============================================
@@ -576,31 +368,31 @@ print("\n" + "="*60)
 print("8. COMPARAÇÃO DOS MODELOS")
 print("="*60)
 
-# 8.1. Criar tabela comparativa - USAR AS VARIÁVEIS ATUALIZADAS
+# 8.1. Criar tabela comparativa
 comparison_data = {
-    'Modelo': ['Regressão Logística (Otimizada)', 'XGBoost (Padrão)', 'XGBoost (Otimizado)'],  # Mudar nome
+    'Modelo': ['Regressão Logística', 'XGBoost (Padrão)', 'XGBoost (Otimizado)'],
     'Acurácia': [
-        accuracy_score(y_test, y_pred_lr),  # Já atualizado na seção 5
+        accuracy_score(y_test, y_pred_lr),
         accuracy_score(y_test, y_pred_xgb),
         accuracy_score(y_test, y_pred_opt)
     ],
     'Precisão': [
-        precision_score(y_test, y_pred_lr),  # Já atualizado
+        precision_score(y_test, y_pred_lr),
         precision_score(y_test, y_pred_xgb),
         precision_score(y_test, y_pred_opt)
     ],
     'Recall': [
-        recall_score(y_test, y_pred_lr),  # Já atualizado
+        recall_score(y_test, y_pred_lr),
         recall_score(y_test, y_pred_xgb),
         recall_score(y_test, y_pred_opt)
     ],
     'F1-Score': [
-        f1_score(y_test, y_pred_lr),  # Já atualizado
+        f1_score(y_test, y_pred_lr),
         f1_score(y_test, y_pred_xgb),
         f1_score(y_test, y_pred_opt)
     ],
     'AUC-ROC': [
-        roc_auc_score(y_test, y_pred_proba_lr),  # Já atualizado
+        roc_auc_score(y_test, y_pred_proba_lr),
         roc_auc_score(y_test, y_pred_proba_xgb),
         roc_auc_score(y_test, y_pred_proba_opt)
     ]
@@ -610,15 +402,27 @@ comparison_df = pd.DataFrame(comparison_data)
 print("\n8.1. Comparação de Desempenho:")
 print(comparison_df.to_string(index=False))
 
-# 8.2. Visualização comparativa (já está usando as variáveis corretas)
+# 8.2. Visualização comparativa
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+metrics = ['Acurácia', 'Precisão', 'Recall', 'F1-Score', 'AUC-ROC']
 
-# 8.3. Matriz de confusão comparativa - ATUALIZAR
+for i, metric in enumerate(metrics):
+    ax = axes[i//3, i%3]
+    ax.bar(comparison_df['Modelo'], comparison_df[metric], color=['blue', 'orange', 'green'])
+    ax.set_title(f'Comparação de {metric}')
+    ax.set_ylabel(metric)
+    ax.set_ylim([0, 1])
+    ax.grid(axis='y', alpha=0.3)
+    
+    # Adicionar valores
+    for j, val in enumerate(comparison_df[metric]):
+        ax.text(j, val + 0.01, f'{val:.3f}', ha='center', va='bottom')
+
+# 8.3. Matriz de confusão comparativa
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-models = [
-    ('Regressão Logística (Otimizada)', y_pred_lr),  # Atualizar nome e variável
-    ('XGBoost (Padrão)', y_pred_xgb),
-    ('XGBoost (Otimizado)', y_pred_opt)
-]
+models = [('Regressão Logística', y_pred_lr), 
+          ('XGBoost (Padrão)', y_pred_xgb),
+          ('XGBoost (Otimizado)', y_pred_opt)]
 
 for i, (name, y_pred) in enumerate(models):
     cm = confusion_matrix(y_test, y_pred)
@@ -633,16 +437,16 @@ plt.tight_layout()
 plt.savefig('comparacao_modelos.png', dpi=300, bbox_inches='tight')
 plt.show()
 
-# 8.4. Curvas ROC comparativas - ATUALIZAR
+# 8.4. Curvas ROC comparativas
 plt.figure(figsize=(10, 8))
 
-# Calcular curvas ROC - USAR VARIÁVEIS ATUALIZADAS
-fpr_lr, tpr_lr, _ = roc_curve(y_test, y_pred_proba_lr)  # Já atualizado
+# Calcular curvas ROC
+fpr_lr, tpr_lr, _ = roc_curve(y_test, y_pred_proba_lr)
 fpr_xgb, tpr_xgb, _ = roc_curve(y_test, y_pred_proba_xgb)
 fpr_opt, tpr_opt, _ = roc_curve(y_test, y_pred_proba_opt)
 
-# Plotar curvas - ATUALIZAR NOME
-plt.plot(fpr_lr, tpr_lr, label=f'Regressão Logística Otimizada (AUC = {roc_auc_score(y_test, y_pred_proba_lr):.3f})', linewidth=2)
+# Plotar curvas
+plt.plot(fpr_lr, tpr_lr, label=f'Regressão Logística (AUC = {roc_auc_score(y_test, y_pred_proba_lr):.3f})', linewidth=2)
 plt.plot(fpr_xgb, tpr_xgb, label=f'XGBoost Padrão (AUC = {roc_auc_score(y_test, y_pred_proba_xgb):.3f})', linewidth=2)
 plt.plot(fpr_opt, tpr_opt, label=f'XGBoost Otimizado (AUC = {roc_auc_score(y_test, y_pred_proba_opt):.3f})', linewidth=2)
 
@@ -715,6 +519,7 @@ shap_df = pd.DataFrame({
 
 print("\n9.3. Importância média das features (SHAP):")
 print(shap_df.head(10).to_string(index=False))
+
 # ============================================
 # 10. SALVAR MODELOS E RESULTADOS
 # ============================================
@@ -726,46 +531,56 @@ print("="*60)
 import joblib
 import json
 
-# 10.1. Salvar modelos - ATUALIZAR PARA pipeline_lr (não lr_model)
-joblib.dump(pipeline_lr, 'modelo_regressao_logistica_otimizada.pkl')  # MUDAR NOME
+# 10.1. Salvar modelos
+joblib.dump(lr_model, 'modelo_regressao_logistica.pkl')
 joblib.dump(xgb_optimized, 'modelo_xgboost_otimizado.pkl')
-# Remover scalers desnecessários
+joblib.dump(scaler_lr, 'scaler_regressao.pkl')
 joblib.dump(scaler_cluster, 'scaler_cluster.pkl')
 joblib.dump(kmeans_final, 'modelo_kmeans.pkl')
 
 print("10.1. Modelos salvos:")
-print("  - modelo_regressao_logistica_otimizada.pkl")  # Atualizado
+print("  - modelo_regressao_logistica.pkl")
 print("  - modelo_xgboost_otimizado.pkl")
+print("  - scaler_regressao.pkl")
 print("  - scaler_cluster.pkl")
 print("  - modelo_kmeans.pkl")
 
-# 10.2. Salvar resultados da comparação (já está atualizado)
+# 10.2. Salvar resultados da comparação
+comparison_df.to_csv('resultados_comparacao.csv', index=False)
 
-# 10.3. Salvar configuração final - ATUALIZAR
+# 10.3. Salvar resultados da clusterização
+cluster_summary = df.groupby('Cluster').agg({
+    'Diabetes_binary': ['mean', 'count'],
+    'BMI': 'mean',
+    'Age_numeric': 'mean',
+    'GenHlth': 'mean',
+    'HighBP': 'mean'
+})
+cluster_summary.columns = ['Taxa_Diabetes', 'n_observacoes', 'BMI_medio', 
+                          'Idade_media', 'Saude_Geral_media', 'Hipertensao_media']
+cluster_summary.to_csv('resumo_clusters.csv')
+
+print("\n10.2. Resultados salvos:")
+print("  - resultados_comparacao.csv")
+print("  - resumo_clusters.csv")
+
+# 10.4. Salvar configuração final
 config = {
     'cluster_features': cluster_features,
     'classification_features': classification_features,
     'optimal_k': optimal_k,
-    'best_model': 'XGBoost (Otimizado)',  # Pode mudar após otimização
-    'best_f1_score': float(f1_score(y_test, y_pred_opt)),  # Atualizar se necessário
-    'best_auc_roc': float(roc_auc_score(y_test, y_pred_proba_opt)),  # Atualizar se necessário
-    'lr_f1_score': float(f1_score(y_test, y_pred_lr)),  # Adicionar métricas da LR
-    'lr_auc_roc': float(roc_auc_score(y_test, y_pred_proba_lr)),  # Adicionar métricas da LR
+    'best_model': 'XGBoost (Otimizado)',
+    'best_f1_score': float(f1_score(y_test, y_pred_opt)),
+    'best_auc_roc': float(roc_auc_score(y_test, y_pred_proba_opt)),
     'top_features_shap': shap_df['feature'].head(5).tolist()
 }
-
-# Verificar qual modelo é melhor
-if f1_score(y_test, y_pred_lr) > f1_score(y_test, y_pred_opt):
-    config['best_model'] = 'Regressão Logística (Otimizada)'
-    config['best_f1_score'] = float(f1_score(y_test, y_pred_lr))
-    config['best_auc_roc'] = float(roc_auc_score(y_test, y_pred_proba_lr))
 
 with open('configuracao_modelo.json', 'w') as f:
     json.dump(config, f, indent=4)
 
 print("\n10.3. Configuração salva em 'configuracao_modelo.json'")
 
-# 10.5. Relatório final - ATUALIZAR
+# 10.5. Relatório final
 print("\n" + "="*60)
 print("RELATÓRIO FINAL")
 print("="*60)
@@ -775,11 +590,6 @@ print(f"3. Modelo vencedor: {config['best_model']}")
 print(f"4. Desempenho (F1-Score): {config['best_f1_score']:.4f}")
 print(f"5. Desempenho (AUC-ROC): {config['best_auc_roc']:.4f}")
 print(f"6. Features mais importantes: {', '.join(config['top_features_shap'])}")
-
-# Adicionar comparação entre modelos
-print(f"\nComparação detalhada:")
-print(f"  Regressão Logística - F1: {f1_score(y_test, y_pred_lr):.4f}, AUC: {roc_auc_score(y_test, y_pred_proba_lr):.4f}")
-print(f"  XGBoost Otimizado - F1: {f1_score(y_test, y_pred_opt):.4f}, AUC: {roc_auc_score(y_test, y_pred_proba_opt):.4f}")
 
 print("\n" + "="*60)
 print("METODOLOGIA CONCLUÍDA!")
